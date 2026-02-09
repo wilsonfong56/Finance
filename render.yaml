@@ -3,7 +3,7 @@ services:
     name: finance-sector-dashboard
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn sector_dashboard:app --bind 0.0.0.0:$PORT
+    startCommand: gunicorn sector_dashboard:app --bind 0.0.0.0:$PORT --timeout 120
     envVars:
       - key: MBOUM_KEY
         sync: false
