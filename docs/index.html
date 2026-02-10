@@ -189,7 +189,6 @@
   <div class="tab active" data-panel="charts">Charts</div>
   <div class="tab" data-panel="holdings">Holdings</div>
   <div class="tab" data-panel="international">International</div>
-  <div class="tab" data-panel="signals">Signals</div>
 </div>
 
 <main>
@@ -253,19 +252,6 @@
     <div class="holdings-grid" id="intl-holdings-grid"></div>
   </div>
 
-  <!-- ── Signals Panel ── -->
-  <div class="panel" id="panel-signals">
-    <div class="signals-toolbar">
-      <input type="text" id="signals-search" placeholder="Filter by ticker or sector..."
-             oninput="filterSignals()">
-    </div>
-    <div id="regime-banner"></div>
-    <div id="signals-loading" style="display:none;padding:40px;text-align:center">
-      <div class="spinner"></div>
-      <div style="color:var(--muted);margin-top:12px;font-size:13px">Loading signals for all ETFs...</div>
-    </div>
-    <div id="signals-table-wrap"></div>
-  </div>
 </main>
 
 <!-- ── Modal ── -->
