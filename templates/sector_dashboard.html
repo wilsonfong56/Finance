@@ -907,12 +907,14 @@ function renderSignalsTable() {
       <th data-col="change_1m">1M Chg%${arrow('change_1m')}</th>
       <th data-col="momentum">Momentum${arrow('momentum')}</th>
       <th data-col="rs">Rel Strength${arrow('rs')}</th>
+      <th data-col="cmf_score">CMF${arrow('cmf_score')}</th>
       <th data-col="flow">Flow${arrow('flow')}</th>
     </tr></thead><tbody>`;
 
   data.forEach(d => {
     const chgColor = d.change_1m >= 0 ? 'var(--green)' : 'var(--red)';
     const groupLabel = d.group === 'intl' ? 'INTL' : 'US';
+    const cmfColor = d.cmf >= 0 ? 'var(--green)' : 'var(--red)';
     html += `<tr>
       <td style="font-weight:700"><span class="ticker-link" onclick="openModal('${d.ticker}', '${d.description.replace(/'/g, "\\'")}')">${d.ticker}</span><span class="group-tag">${groupLabel}</span></td>
       <td><span class="risk-tag ${riskTagClass(d.risk_class)}">${riskTagLabel(d.risk_class)}</span></td>
@@ -921,6 +923,7 @@ function renderSignalsTable() {
       <td style="color:${chgColor};font-weight:600">${d.change_1m >= 0 ? '+' : ''}${d.change_1m.toFixed(2)}%</td>
       <td><span class="score-badge ${scoreClass(d.momentum)}">${d.momentum}</span></td>
       <td><span class="score-badge ${scoreClass(d.rs)}">${d.rs}</span></td>
+      <td><span class="score-badge ${scoreClass(d.cmf_score)}">${d.cmf >= 0 ? '+' : ''}${d.cmf.toFixed(3)}</span></td>
       <td><span class="flow-tag ${flowTagClass(d.flow)}">${d.flow}</span></td>
     </tr>`;
   });

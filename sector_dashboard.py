@@ -211,11 +211,50 @@ def _linear_score(val, lo, hi):
     return _clamp(1 + 9 * (val - lo) / (hi - lo), 1, 10)
 
 
-def _compute_signals_for_etf(ticker, description):
-    """Compute momentum, flow, and 1-month return for one ETF.
+def _calc_cmf(records, period=20):
+    """Chaikin Money Flow over last `period` bars.
 
-    RS (relative strength vs peers) is computed in a second pass.
+    MF Multiplier = ((Close - Low) - (High - Close)) / (High - Low)
+    MF Volume     = Multiplier × Volume
+    CMF           = Sum(MF Volume, N) / Sum(Volume, N)
+    Returns float in [-1, +1].
     """
+    recent = records[-period:]
+    mf_vol_sum = 0.0
+    vol_sum = 0.0
+    for r in recent:
+        hl = r["high"] - r["low"]
+        if hl == 0:
+            continue
+        mf_mult = ((r["close"] - r["low"]) - (r["high"] - r["close"])) / hl
+        mf_vol_sum += mf_mult * r["volume"]
+        vol_sum += r["volume"]
+    return mf_vol_sum / vol_sum if vol_sum > 0 else 0.0
+
+
+def _calc_mansfield_rs(etf_closes, spy_closes, sma_period=50):
+    """Mansfield Relative Strength: RS ratio vs its SMA.
+
+    RS ratio = ETF / SPY (daily).  Mansfield = (ratio / SMA(ratio) - 1) * 100.
+    Positive = outperforming SPY, negative = underperforming.
+    """
+    n = min(len(etf_closes), len(spy_closes))
+    if n < sma_period + 1:
+        return 0.0
+    # Align from the end (most recent bars match)
+    ec = etf_closes[-n:]
+    sc = spy_closes[-n:]
+    ratios = [ec[i] / sc[i] for i in range(n) if sc[i] != 0]
+    if len(ratios) < sma_period + 1:
+        return 0.0
+    sma = sum(ratios[-sma_period:]) / sma_period
+    if sma == 0:
+        return 0.0
+    return (ratios[-1] / sma - 1) * 100
+
+
+def _compute_signals_for_etf(ticker, description, spy_closes):
+    """Compute momentum, CMF, Mansfield RS for one ETF."""
     try:
         records = _fetch_mboum(ticker, "1d")
         if not records or len(records) < 50:
@@ -228,41 +267,39 @@ def _compute_signals_for_etf(ticker, description):
         ema21 = _calc_ema(closes, 21)
 
         # ── Momentum (1-10, higher = stronger uptrend) ──
-        # RSI component (40%)
         if rsi < 30:
-            rsi_score = _linear_score(rsi, 0, 30) * 2 / 10  # 1-2
+            rsi_score = _linear_score(rsi, 0, 30) * 2 / 10
             rsi_score = _clamp(rsi_score, 1, 2)
         elif rsi < 50:
-            rsi_score = 3 + (rsi - 30) / 20  # 3-4
+            rsi_score = 3 + (rsi - 30) / 20
         elif rsi < 70:
-            rsi_score = 5 + 2 * (rsi - 50) / 20  # 5-7
+            rsi_score = 5 + 2 * (rsi - 50) / 20
         else:
-            rsi_score = 7 + 3 * (rsi - 70) / 30  # 7-10
+            rsi_score = 7 + 3 * (rsi - 70) / 30
         rsi_score = _clamp(rsi_score, 1, 10)
 
-        # Price vs EMA(21) (30%)
         pct_from_ema = (price - ema21[-1]) / ema21[-1] * 100
         ema_score = _linear_score(pct_from_ema, -10, 10)
 
-        # 1-month return (30%) — 21 trading days
         idx_1m = max(0, len(closes) - 22)
         ret_1m = (price - closes[idx_1m]) / closes[idx_1m] * 100
         ret_score = _linear_score(ret_1m, -15, 15)
 
         momentum = round(rsi_score * 0.4 + ema_score * 0.3 + ret_score * 0.3, 1)
 
-        # ── Flow direction (Accum / Distrib / Neutral) ──
-        recent = records[-10:]
-        up_vol = sum(r["volume"] for r in recent if r["close"] >= r["open"])
-        total_vol = sum(r["volume"] for r in recent)
-        up_vol_ratio = up_vol / total_vol if total_vol > 0 else 0.5
-
-        if up_vol_ratio > 0.58:
+        # ── Chaikin Money Flow (volume-weighted accum/distrib) ──
+        cmf = _calc_cmf(records, 20)
+        cmf_score = round(_linear_score(cmf, -0.25, 0.25), 1)
+        if cmf > 0.05:
             flow = "Accum"
-        elif up_vol_ratio < 0.42:
+        elif cmf < -0.05:
             flow = "Distrib"
         else:
             flow = "Neutral"
+
+        # ── Mansfield Relative Strength vs SPY ──
+        mrs = _calc_mansfield_rs(closes, spy_closes, 50)
+        rs_score = round(_linear_score(mrs, -8, 8), 1)
 
         return {
             "ticker": ticker,
@@ -271,7 +308,9 @@ def _compute_signals_for_etf(ticker, description):
             "change_1m": round(ret_1m, 2),
             "risk_class": RISK_CLASS.get(ticker, "neutral"),
             "momentum": momentum,
-            "rs": 5.0,  # placeholder — filled in second pass
+            "rs": rs_score,
+            "cmf": round(cmf, 3),
+            "cmf_score": cmf_score,
             "flow": flow,
         }
     except Exception as e:
@@ -349,23 +388,24 @@ def api_signals():
         return jsonify(_signals_cache["data"])
 
     try:
+        # Fetch SPY benchmark once for Mansfield RS
+        try:
+            spy_records = _fetch_mboum("SPY", "1d")
+            spy_closes = [r["close"] for r in spy_records]
+        except Exception:
+            spy_closes = []
+
         results = []
         for ticker, desc in ETF_REGISTRY.items():
-            sig = _compute_signals_for_etf(ticker, desc)
+            sig = _compute_signals_for_etf(ticker, desc, spy_closes)
             if sig:
                 sig["group"] = "sector"
                 results.append(sig)
         for ticker, desc in INTL_REGISTRY.items():
-            sig = _compute_signals_for_etf(ticker, desc)
+            sig = _compute_signals_for_etf(ticker, desc, spy_closes)
             if sig:
                 sig["group"] = "intl"
                 results.append(sig)
-
-        # ── Second pass: Relative Strength vs peer average ──
-        if results:
-            avg_ret = sum(r["change_1m"] for r in results) / len(results)
-            for r in results:
-                r["rs"] = round(_linear_score(r["change_1m"] - avg_ret, -10, 10), 1)
 
         # ── Regime summary ──
         risk_on = [r for r in results if r["risk_class"] == "risk-on"]
