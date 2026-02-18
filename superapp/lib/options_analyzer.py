@@ -140,8 +140,18 @@ def prob_profit(option_type: str, spot: float, strike: float, premium: float,
 
 # ── Main analysis ────────────────────────────────────────────────────────────
 
+def is_monthly_expiration(date_str: str) -> bool:
+    """Check if a date is the third Friday of its month (standard monthly expiration)."""
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    if dt.weekday() != 4:  # Not a Friday
+        return False
+    # Third Friday falls on days 15-21
+    return 15 <= dt.day <= 21
+
+
 def analyze_options(ticker: str, min_volume: int = 1000, min_oi: int = 1000,
-                    max_expirations: int = 6, min_dte: int = 0) -> dict:
+                    max_expirations: int = 6, min_dte: int = 0,
+                    monthly_only: bool = False) -> dict:
     """
     Fetch and analyze the full options chain for a ticker.
 
@@ -219,14 +229,21 @@ def analyze_options(ticker: str, min_volume: int = 1000, min_oi: int = 1000,
         print("No options parsed")
         return None
 
-    # 5. Get unique expirations and limit
+    # 5. Filter to monthly expirations if requested
+    if monthly_only:
+        df = df[df['expiration'].apply(is_monthly_expiration)]
+        if df.empty:
+            print("No monthly expirations found")
+            return None
+
+    # 6. Get unique expirations and limit
     expirations = sorted(df['expiration'].unique())[:max_expirations]
     df = df[df['expiration'].isin(expirations)]
 
-    # 6. Filter for liquidity
+    # 7. Filter for liquidity
     df = df[(df['volume'] >= min_volume) | (df['oi'] >= min_oi)]
 
-    # 7. Calculate extra metrics
+    # 8. Calculate extra metrics
     df['ivVsIV30'] = (df['iv'] - iv30).round(2)  # per-strike IV vs overall IV30
     df['moneyness'] = ((df['strike'] - current_price) / current_price * 100).round(1)
 
@@ -292,13 +309,16 @@ def main():
     else:
         opt_type_filter = 'both'
 
+    monthly_input = input("Monthly expirations only? (y/n) [n]: ").strip().lower()
+    monthly_only = monthly_input in ('y', 'yes')
+
     liq_input = input("Apply liquidity filter for cheapest options? (y/n) [y]: ").strip().lower()
     cheap_liq = liq_input != 'n'
 
-    print(f"\nFetching data for {ticker} (min {min_dte} DTE)...\n")
+    print(f"\nFetching data for {ticker} (min {min_dte} DTE{', monthly only' if monthly_only else ''})...\n")
 
     try:
-        data = analyze_options(ticker, min_dte=min_dte)
+        data = analyze_options(ticker, min_dte=min_dte, monthly_only=monthly_only)
     except requests.exceptions.HTTPError as e:
         print(f"Error: {e}")
         print("Make sure the ticker is valid and optionable.")

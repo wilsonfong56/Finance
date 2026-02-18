@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Finance Dashboard</title>
-<script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root {
     --bg: #0d1117; --surface: #161b22; --border: #30363d;
@@ -96,17 +95,6 @@
   .error-msg { background: rgba(248,81,73,0.1); border: 1px solid var(--red);
     color: var(--red); padding: 12px 16px; border-radius: 6px; margin: 12px 0; }
 
-  /* ── Timeframe bar ── */
-  .tf-bar { display: flex; gap: 16px; align-items: center; margin-bottom: 10px;
-            flex-wrap: wrap; }
-  .tf-group { display: flex; gap: 4px; align-items: center; }
-  .tf-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
-              letter-spacing: 0.5px; margin-right: 4px; }
-  .tf-btn { background: var(--surface); border: 1px solid var(--border);
-    color: var(--muted); padding: 5px 12px; border-radius: 4px; cursor: pointer;
-    font-size: 12px; font-weight: 500; }
-  .tf-btn:hover { color: var(--text); border-color: var(--text); }
-  .tf-btn.active { color: var(--accent); border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -215,29 +203,13 @@
 
   <!-- ── Chart Panel ── -->
   <div class="panel" id="panel-charts">
-    <div class="tf-bar" id="tf-bar">
-      <div class="tf-group">
-        <span class="tf-label">Interval:</span>
-        <button class="tf-btn active" data-interval="1d" data-range="1y">Daily</button>
-        <button class="tf-btn" data-interval="1wk" data-range="5y">Weekly</button>
-        <button class="tf-btn" data-interval="1mo" data-range="max">Monthly</button>
-      </div>
-      <div class="tf-group">
-        <span class="tf-label">Range:</span>
-        <button class="tf-btn" data-range="1mo">1M</button>
-        <button class="tf-btn" data-range="3mo">3M</button>
-        <button class="tf-btn" data-range="6mo">6M</button>
-        <button class="tf-btn active" data-range="1y">1Y</button>
-        <button class="tf-btn" data-range="5y">5Y</button>
-        <button class="tf-btn" data-range="max">Max</button>
-      </div>
-    </div>
     <div class="chart-container" id="tv-chart-container" style="height: 620px;">
       <div class="empty-state">Enter a ticker and click <strong>Analyze</strong> to load the chart.</div>
     </div>
   </div>
 </main>
 
+<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 <script>
 // ── State ──
 let quoteData = null;
@@ -308,130 +280,31 @@ async function fetchAll() {
   }
 }
 
-// ── Chart (lightweight-charts) ──
-let chartInstance = null;
-let chartResizeObserver = null;
-let chartInterval = '1d';
-let chartRange = '1y';
+// ── Chart (TradingView embed) ──
+let tvWidget = null;
 
-function calcEMA(closes, period) {
-  const k = 2 / (period + 1);
-  const ema = [closes[0]];
-  for (let i = 1; i < closes.length; i++) {
-    ema.push(closes[i] * k + ema[i - 1] * (1 - k));
-  }
-  return ema;
-}
-
-// Wire up timeframe buttons
-document.getElementById('tf-bar').addEventListener('click', (e) => {
-  const btn = e.target.closest('.tf-btn');
-  if (!btn || !currentTicker) return;
-
-  const group = btn.closest('.tf-group');
-  const isIntervalGroup = group === group.parentElement.firstElementChild;
-
-  if (isIntervalGroup) {
-    // Interval button: sets both interval and range
-    chartInterval = btn.dataset.interval;
-    chartRange = btn.dataset.range;
-    // Update active states in both groups
-    group.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    // Also highlight the matching range button
-    const rangeGroup = group.nextElementSibling;
-    rangeGroup.querySelectorAll('.tf-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.range === chartRange);
-    });
-  } else {
-    // Range button: only changes range, keeps current interval
-    chartRange = btn.dataset.range;
-    group.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-  }
-
-  loadChart(currentTicker, chartInterval, chartRange);
-});
-
-async function loadChart(ticker, interval, range) {
-  interval = interval || chartInterval;
-  range = range || chartRange;
-
+function loadChart(ticker) {
   const container = document.getElementById('tv-chart-container');
-  container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="margin-top:8px">Loading chart...</p></div>';
-
-  let data;
-  try {
-    const res = await fetch(`/api/chart/${ticker}?interval=${interval}&range=${range}`);
-    data = await res.json();
-    if (data.error) throw new Error(data.error);
-    if (!data.length) throw new Error('No data returned');
-  } catch (e) {
-    container.innerHTML = '<div class="error-msg">Chart error: ' + e.message + '</div>';
-    return;
-  }
-
   container.innerHTML = '';
 
-  if (chartResizeObserver) { chartResizeObserver.disconnect(); chartResizeObserver = null; }
-  if (chartInstance) { chartInstance.remove(); chartInstance = null; }
-
-  chartInstance = LightweightCharts.createChart(container, {
-    width: container.clientWidth,
-    height: 620,
-    layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
-    grid: { vertLines: { color: '#1e252e' }, horzLines: { color: '#1e252e' } },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    rightPriceScale: { borderColor: '#30363d' },
-    timeScale: { borderColor: '#30363d', timeVisible: false },
+  tvWidget = new TradingView.widget({
+    symbol: ticker,
+    interval: 'D',
+    timezone: 'America/New_York',
+    theme: 'dark',
+    style: '1',
+    locale: 'en',
+    autosize: true,
+    hide_top_toolbar: false,
+    hide_side_toolbar: false,
+    hide_legend: false,
+    allow_symbol_change: false,
+    save_image: false,
+    studies: ['MAExp@tv-basicstudies|8', 'MAExp@tv-basicstudies|21'],
+    container_id: 'tv-chart-container',
+    backgroundColor: '#161b22',
+    gridColor: '#1e252e',
   });
-
-  // Candlestick series
-  const candleSeries = chartInstance.addCandlestickSeries({
-    upColor: '#3fb950', downColor: '#f85149',
-    borderUpColor: '#3fb950', borderDownColor: '#f85149',
-    wickUpColor: '#3fb950', wickDownColor: '#f85149',
-  });
-  candleSeries.setData(data.map(d => ({
-    time: d.time, open: d.open, high: d.high, low: d.low, close: d.close,
-  })));
-
-  // Volume
-  const volSeries = chartInstance.addHistogramSeries({
-    priceFormat: { type: 'volume' },
-    priceScaleId: 'vol',
-  });
-  chartInstance.priceScale('vol').applyOptions({
-    scaleMargins: { top: 0.85, bottom: 0 },
-  });
-  volSeries.setData(data.map(d => ({
-    time: d.time, value: d.volume,
-    color: d.close >= d.open ? 'rgba(63,185,80,0.25)' : 'rgba(248,81,73,0.25)',
-  })));
-
-  // EMAs
-  const closes = data.map(d => d.close);
-
-  const ema8vals = calcEMA(closes, 8);
-  const ema8series = chartInstance.addLineSeries({
-    color: '#4CAF50', lineWidth: 2, priceLineVisible: false,
-    lastValueVisible: false, crosshairMarkerVisible: false,
-  });
-  ema8series.setData(data.map((d, i) => ({ time: d.time, value: parseFloat(ema8vals[i].toFixed(2)) })));
-
-  const ema21vals = calcEMA(closes, 21);
-  const ema21series = chartInstance.addLineSeries({
-    color: '#F44336', lineWidth: 2, priceLineVisible: false,
-    lastValueVisible: false, crosshairMarkerVisible: false,
-  });
-  ema21series.setData(data.map((d, i) => ({ time: d.time, value: parseFloat(ema21vals[i].toFixed(2)) })));
-
-  chartInstance.timeScale().fitContent();
-
-  chartResizeObserver = new ResizeObserver(() => {
-    if (chartInstance) chartInstance.applyOptions({ width: container.clientWidth });
-  });
-  chartResizeObserver.observe(container);
 }
 
 // ── Render quote cards ──
