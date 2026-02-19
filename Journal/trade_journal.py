@@ -1298,70 +1298,91 @@ async function renderEquityCurve() {
   function xPos(i) { return padL + (data.length === 1 ? cw / 2 : i / (data.length - 1) * cw); }
   function yPos(v) { return padT + (1 - (v - minV) / range) * ch; }
 
-  // Build SVG
   var zeroY = yPos(0);
-  var pathParts = [];
-  var areaParts = [];
+  var pathParts = [], areaParts = [];
   data.forEach(function(d, i) {
     var x = xPos(i), y = yPos(d.cumulative_pnl);
     pathParts.push((i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1));
     areaParts.push((i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1));
   });
-  // Close area to zero line
   areaParts.push('L' + xPos(data.length - 1).toFixed(1) + ',' + zeroY.toFixed(1));
   areaParts.push('L' + xPos(0).toFixed(1) + ',' + zeroY.toFixed(1) + 'Z');
+  var areaD = areaParts.join('');
+  var lineD = pathParts.join('');
 
   var lastVal = vals[vals.length - 1];
   var lineColor = lastVal >= 0 ? '#3fb950' : '#f85149';
-  var fillColor = lastVal >= 0 ? 'rgba(63,185,80,0.12)' : 'rgba(248,81,73,0.12)';
 
   var svg = '<svg width="' + W + '" height="' + H + '" style="display:block">';
 
-  // Grid lines + labels (5 horizontal lines)
-  var steps = 4;
-  for (var s = 0; s <= steps; s++) {
-    var v = minV + (range * s / steps);
+  // Clip paths: green fill above zero line, red fill below zero line
+  svg += '<defs>';
+  svg += '<clipPath id="eq-clip-above"><rect x="0" y="0" width="' + W + '" height="' + zeroY.toFixed(1) + '"/></clipPath>';
+  svg += '<clipPath id="eq-clip-below"><rect x="0" y="' + zeroY.toFixed(1) + '" width="' + W + '" height="' + (H - zeroY).toFixed(1) + '"/></clipPath>';
+  svg += '</defs>';
+
+  // Grid lines + labels
+  for (var s = 0; s <= 4; s++) {
+    var v = minV + (range * s / 4);
     var gy = yPos(v);
-    svg += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) +
-      '" stroke="#1e252e" stroke-width="1"/>';
-    svg += '<text x="' + (padL - 6) + '" y="' + (gy + 4).toFixed(1) +
-      '" fill="#8b949e" font-size="10" text-anchor="end">' + v.toFixed(1) + '%</text>';
+    svg += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) + '" stroke="#1e252e" stroke-width="1"/>';
+    svg += '<text x="' + (padL - 6) + '" y="' + (gy + 4).toFixed(1) + '" fill="#8b949e" font-size="10" text-anchor="end">' + v.toFixed(1) + '%</text>';
   }
 
   // Zero line
-  if (minV < 0 && maxV > 0) {
-    svg += '<line x1="' + padL + '" y1="' + zeroY.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + zeroY.toFixed(1) +
-      '" stroke="#30363d" stroke-width="1" stroke-dasharray="4,3"/>';
-  }
+  svg += '<line x1="' + padL + '" y1="' + zeroY.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + zeroY.toFixed(1) + '" stroke="#30363d" stroke-width="1" stroke-dasharray="4,3"/>';
 
-  // X-axis labels (show up to 8 dates)
+  // X-axis labels
   var labelStep = Math.max(1, Math.floor(data.length / 8));
   for (var i = 0; i < data.length; i += labelStep) {
-    var lbl = data[i].date.slice(5); // MM-DD
-    svg += '<text x="' + xPos(i).toFixed(1) + '" y="' + (H - 4) +
-      '" fill="#8b949e" font-size="10" text-anchor="middle">' + lbl + '</text>';
+    svg += '<text x="' + xPos(i).toFixed(1) + '" y="' + (H - 4) + '" fill="#8b949e" font-size="10" text-anchor="middle">' + data[i].date.slice(5) + '</text>';
   }
 
-  // Area fill + line
-  svg += '<path d="' + areaParts.join('') + '" fill="' + fillColor + '"/>';
-  svg += '<path d="' + pathParts.join('') + '" fill="none" stroke="' + lineColor + '" stroke-width="2"/>';
+  // Area fill: green above zero, red below zero (using clip paths)
+  svg += '<path d="' + areaD + '" fill="rgba(63,185,80,0.15)" clip-path="url(#eq-clip-above)"/>';
+  svg += '<path d="' + areaD + '" fill="rgba(248,81,73,0.15)" clip-path="url(#eq-clip-below)"/>';
 
-  // Dots on data points (if few enough)
-  if (data.length <= 30) {
-    data.forEach(function(d, i) {
-      svg += '<circle cx="' + xPos(i).toFixed(1) + '" cy="' + yPos(d.cumulative_pnl).toFixed(1) +
-        '" r="3" fill="' + lineColor + '"/>';
-    });
-  }
+  // Line
+  svg += '<path d="' + lineD + '" fill="none" stroke="' + lineColor + '" stroke-width="2"/>';
+
+  // Visible dots (colored by own value) + invisible hit areas for hover
+  data.forEach(function(d, i) {
+    var cx = xPos(i).toFixed(1), cy = yPos(d.cumulative_pnl).toFixed(1);
+    var dotColor = d.cumulative_pnl >= 0 ? '#3fb950' : '#f85149';
+    var label = (d.cumulative_pnl >= 0 ? '+' : '') + d.cumulative_pnl.toFixed(2) + '%';
+    svg += '<circle cx="' + cx + '" cy="' + cy + '" r="3" fill="' + dotColor + '" pointer-events="none"/>';
+    svg += '<circle class="eq-hit" cx="' + cx + '" cy="' + cy + '" r="10" fill="transparent"' +
+      ' data-val="' + label + '" data-date="' + d.date.slice(5) + '" data-pos="' + (d.cumulative_pnl >= 0 ? '1' : '0') + '"/>';
+  });
 
   // End label
-  var lastX = xPos(data.length - 1);
-  var lastY = yPos(lastVal);
-  svg += '<text x="' + (lastX + 6).toFixed(1) + '" y="' + (lastY + 4).toFixed(1) +
+  svg += '<text x="' + (xPos(data.length - 1) + 6).toFixed(1) + '" y="' + (yPos(lastVal) + 4).toFixed(1) +
     '" fill="' + lineColor + '" font-size="11" font-weight="700">' + (lastVal >= 0 ? '+' : '') + lastVal.toFixed(2) + '%</text>';
 
   svg += '</svg>';
-  container.innerHTML = svg;
+
+  container.style.position = 'relative';
+  container.innerHTML = svg +
+    '<div id="eq-tip" style="display:none;position:absolute;pointer-events:none;' +
+    'background:rgba(13,17,23,0.95);border:1px solid #30363d;border-radius:5px;' +
+    'padding:4px 10px;font-size:12px;white-space:nowrap;z-index:10;transform:translate(-50%,-100%)"></div>';
+
+  container.querySelectorAll('.eq-hit').forEach(function(el) {
+    el.addEventListener('mouseenter', function() {
+      var tip = document.getElementById('eq-tip');
+      var cr  = container.getBoundingClientRect();
+      var er  = el.getBoundingClientRect();
+      var col = el.getAttribute('data-pos') === '1' ? '#3fb950' : '#f85149';
+      tip.innerHTML = '<span style="color:#8b949e;margin-right:6px">' + el.getAttribute('data-date') + '</span>' +
+        '<span style="color:' + col + ';font-weight:700">' + el.getAttribute('data-val') + '</span>';
+      tip.style.left = (er.left + er.width / 2 - cr.left) + 'px';
+      tip.style.top  = (er.top - cr.top - 6) + 'px';
+      tip.style.display = 'block';
+    });
+    el.addEventListener('mouseleave', function() {
+      document.getElementById('eq-tip').style.display = 'none';
+    });
+  });
 }
 
 async function toggleDirBreakdown() {
