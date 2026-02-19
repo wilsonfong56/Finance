@@ -727,6 +727,7 @@ tr:hover { background: rgba(88,166,255,0.04); }
 .expand-content { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .expand-section h4 { font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; }
 .expand-section p { font-size: 13px; white-space: pre-wrap; }
+.expand-section p img { max-width: 100%; border-radius: 4px; margin-top: 8px; display: block; }
 .exit-list { list-style: none; }
 .exit-list li { padding: 4px 0; display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .exit-list .del-exit { background: none; border: none; color: var(--red); cursor: pointer;
@@ -780,6 +781,11 @@ tr:hover { background: rgba(88,166,255,0.04); }
 .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
   outline: none; border-color: var(--accent); }
 .form-group textarea { resize: vertical; min-height: 60px; }
+.rich-editor { min-height: 80px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-size: 13px; font-family: inherit; cursor: text;
+  white-space: pre-wrap; word-wrap: break-word; outline: none; }
+.rich-editor:focus { border-color: var(--accent); }
+.rich-editor img { max-width: 100%; border-radius: 4px; margin-top: 8px; display: block; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 .option-fields { display: none; }
@@ -1027,7 +1033,7 @@ tr:hover { background: rgba(88,166,255,0.04); }
       </div>
       <div class="form-group">
         <label>Entry Thesis</label>
-        <textarea id="f-thesis" placeholder="Why are you entering this trade?"></textarea>
+        <div contenteditable="true" id="f-thesis" class="rich-editor"></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1052,11 +1058,11 @@ tr:hover { background: rgba(88,166,255,0.04); }
       </div>
       <div class="form-group">
         <label>Entry Thesis</label>
-        <textarea id="e-thesis"></textarea>
+        <div contenteditable="true" id="e-thesis" class="rich-editor"></div>
       </div>
       <div class="form-group">
         <label>Exit Notes</label>
-        <textarea id="e-notes"></textarea>
+        <div contenteditable="true" id="e-notes" class="rich-editor"></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1067,6 +1073,46 @@ tr:hover { background: rgba(88,166,255,0.04); }
 </div>
 
 <script>
+// ── Rich editor helpers ──
+function sanitizeRichContent(html) {
+  var t = (html || '').trim();
+  if (!t || t === '<br>' || t === '<br/>') return null;
+  return t;
+}
+
+function initRichEditors() {
+  document.querySelectorAll('.rich-editor').forEach(function(editor) {
+    editor.addEventListener('paste', function(e) {
+      var items = (e.clipboardData || e.originalEvent.clipboardData).items;
+      var hasImage = false;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          hasImage = true;
+          e.preventDefault();
+          var blob = items[i].getAsFile();
+          var reader = new FileReader();
+          reader.onload = function(ev) {
+            var img = document.createElement('img');
+            img.src = ev.target.result;
+            img.style.maxWidth = '100%';
+            img.style.borderRadius = '4px';
+            img.style.marginTop = '8px';
+            img.style.display = 'block';
+            document.execCommand('insertHTML', false, img.outerHTML);
+          };
+          reader.readAsDataURL(blob);
+          return;
+        }
+      }
+      if (!hasImage) {
+        e.preventDefault();
+        var text = (e.clipboardData || e.originalEvent.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, text);
+      }
+    });
+  });
+}
+
 // ── State ──
 var STATE = { settings: {}, positions: [], setupTags: [], accounts: [], activeAccountId: '' };
 var SORT = { closed: { col: null, asc: true } };
@@ -1732,7 +1778,7 @@ function openNewModal() {
   document.getElementById('f-option-type').value = 'call';
   document.getElementById('f-strike').value = '';
   document.getElementById('f-expiry').value = '';
-  document.getElementById('f-thesis').value = '';
+  document.getElementById('f-thesis').innerHTML = '';
   toggleOptionFields();
   populateTagDropdown('f-tag');
   document.getElementById('f-tag').value = '';
@@ -1808,7 +1854,7 @@ async function submitEntry() {
       quantity:     qty,
       entry_date:   entryDate,
       setup_tag:    document.getElementById('f-tag').value || null,
-      entry_thesis: document.getElementById('f-thesis').value || null,
+      entry_thesis: sanitizeRichContent(document.getElementById('f-thesis').innerHTML),
       account_id:   parseInt(accountId),
     };
     if (assetType === 'option') {
@@ -1837,8 +1883,8 @@ function openEditModal(pid) {
   document.getElementById('e-id').value = pid;
   populateTagDropdown('e-tag');
   document.getElementById('e-tag').value = pos.setup_tag || '';
-  document.getElementById('e-thesis').value = pos.entry_thesis || '';
-  document.getElementById('e-notes').value = pos.exit_notes || '';
+  document.getElementById('e-thesis').innerHTML = pos.entry_thesis || '';
+  document.getElementById('e-notes').innerHTML = pos.exit_notes || '';
   document.getElementById('edit-modal').classList.add('active');
 }
 
@@ -1850,8 +1896,8 @@ async function submitEdit() {
   var pid = document.getElementById('e-id').value;
   var body = {
     setup_tag: document.getElementById('e-tag').value || null,
-    entry_thesis: document.getElementById('e-thesis').value || null,
-    exit_notes: document.getElementById('e-notes').value || null,
+    entry_thesis: sanitizeRichContent(document.getElementById('e-thesis').innerHTML),
+    exit_notes: sanitizeRichContent(document.getElementById('e-notes').innerHTML),
   };
   await apiPut('/api/position/' + pid, body);
   closeEditModal();
@@ -1904,6 +1950,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ── Boot ──
+initRichEditors();
 init();
 </script>
 </body>
