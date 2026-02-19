@@ -704,7 +704,7 @@ th { text-align: left; padding: 10px 12px; color: var(--muted); font-size: 11px;
      text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border);
      cursor: pointer; user-select: none; white-space: nowrap; }
 th:hover { color: var(--text); }
-td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 tr:hover { background: rgba(88,166,255,0.04); }
 .positive { color: var(--green); }
 .negative { color: var(--red); }
@@ -1270,7 +1270,7 @@ async function renderEquityCurve() {
   // Chart dimensions
   var W = container.clientWidth - 32;
   var H = 188;
-  var padL = 55, padR = 16, padT = 20, padB = 28;
+  var padL = 55, padR = 56, padT = 20, padB = 28;
   var cw = W - padL - padR;
   var ch = H - padT - padB;
 
