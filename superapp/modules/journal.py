@@ -221,21 +221,42 @@ def api_equity_curve():
         last_exit = max(e["exit_date"] for e in p["exits"])
         points.append({"date": last_exit, "account_pnl": p["account_pnl"]})
     points.sort(key=lambda x: x["date"])
-    today_str = tj.date.today().isoformat()
+
+    def first_trading_day(d):
+        while d.weekday() >= 5:
+            d += tj.timedelta(days=1)
+        return d
+
+    today        = tj.date.today()
+    today_str    = today.isoformat()
+    period_start = None
+
     if period == "day":
         points = [pt for pt in points if pt["date"] == today_str]
+        total  = round(sum(pt["account_pnl"] for pt in points), 2)
+        return jsonify([{"date": today_str, "cumulative_pnl": total}] if points else [])
     elif period == "wtd":
-        d      = tj.date.today()
-        monday = tj.date.fromordinal(d.toordinal() - d.weekday()).isoformat()
-        points = [pt for pt in points if pt["date"] >= monday]
+        period_start = (today - tj.timedelta(days=today.weekday())).isoformat()
+        points = [pt for pt in points if pt["date"] >= period_start]
     elif period == "mtd":
-        points = [pt for pt in points if pt["date"] >= today_str[:8] + "01"]
+        period_start = first_trading_day(tj.date(today.year, today.month, 1)).isoformat()
+        points = [pt for pt in points if pt["date"] >= period_start]
     elif period == "ytd":
-        points = [pt for pt in points if pt["date"] >= today_str[:5] + "01-01"]
-    cumulative, running = [], 0.0
+        period_start = first_trading_day(tj.date(today.year, 1, 1)).isoformat()
+        points = [pt for pt in points if pt["date"] >= period_start]
+
+    daily = {}
     for pt in points:
-        running += pt["account_pnl"]
-        cumulative.append({"date": pt["date"], "cumulative_pnl": round(running, 2)})
+        daily[pt["date"]] = daily.get(pt["date"], 0.0) + pt["account_pnl"]
+    sorted_dates = sorted(daily.keys())
+
+    cumulative = []
+    if period_start and period_start not in daily:
+        cumulative.append({"date": period_start, "cumulative_pnl": 0.0})
+    running = 0.0
+    for d in sorted_dates:
+        running += daily[d]
+        cumulative.append({"date": d, "cumulative_pnl": round(running, 2)})
     return jsonify(cumulative)
 
 
