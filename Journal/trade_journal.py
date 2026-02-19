@@ -17,7 +17,7 @@ import os
 import sqlite3
 import threading
 import webbrowser
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from flask import Flask, jsonify, request
 
@@ -538,27 +538,37 @@ def api_equity_curve():
 
     points.sort(key=lambda x: x["date"])
 
-    # Filter by period
-    today_str = date.today().isoformat()
+    def first_trading_day(d):
+        """Advance d forward past weekends to land on a weekday."""
+        while d.weekday() >= 5:
+            d += timedelta(days=1)
+        return d
+
+    # Filter by period and determine the anchor start date
+    today = date.today()
+    today_str = today.isoformat()
+    period_start = None
+
     if period == "day":
         points = [pt for pt in points if pt["date"] == today_str]
+        period_start = today_str
     elif period == "wtd":
-        # Week-to-date: Monday of current week
-        d = date.today()
-        monday = d.isoformat() if d.weekday() == 0 else (
-            date.fromordinal(d.toordinal() - d.weekday()).isoformat()
-        )
-        points = [pt for pt in points if pt["date"] >= monday]
+        monday = today - timedelta(days=today.weekday())
+        monday_str = monday.isoformat()
+        points = [pt for pt in points if pt["date"] >= monday_str]
+        period_start = monday_str
     elif period == "mtd":
-        month_start = today_str[:8] + "01"
-        points = [pt for pt in points if pt["date"] >= month_start]
+        period_start = first_trading_day(date(today.year, today.month, 1)).isoformat()
+        points = [pt for pt in points if pt["date"] >= period_start]
     elif period == "ytd":
-        year_start = today_str[:5] + "01-01"
-        points = [pt for pt in points if pt["date"] >= year_start]
+        period_start = first_trading_day(date(today.year, 1, 1)).isoformat()
+        points = [pt for pt in points if pt["date"] >= period_start]
 
-    # Build cumulative series
+    # Build cumulative series, anchored at 0 on the period start date
     cumulative = []
     running = 0.0
+    if period_start and (not points or points[0]["date"] > period_start):
+        cumulative.append({"date": period_start, "cumulative_pnl": 0.0})
     for pt in points:
         running += pt["account_pnl"]
         cumulative.append({"date": pt["date"], "cumulative_pnl": round(running, 2)})
