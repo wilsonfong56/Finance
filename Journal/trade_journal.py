@@ -1342,8 +1342,9 @@ async function renderEquityCurve() {
   svg += '<path d="' + areaD + '" fill="rgba(63,185,80,0.15)" clip-path="url(#eq-clip-above)"/>';
   svg += '<path d="' + areaD + '" fill="rgba(248,81,73,0.15)" clip-path="url(#eq-clip-below)"/>';
 
-  // Line
-  svg += '<path d="' + lineD + '" fill="none" stroke="' + lineColor + '" stroke-width="2"/>';
+  // Line: green above zero, red below zero (same clip paths as area)
+  svg += '<path d="' + lineD + '" fill="none" stroke="#3fb950" stroke-width="2" clip-path="url(#eq-clip-above)"/>';
+  svg += '<path d="' + lineD + '" fill="none" stroke="#f85149" stroke-width="2" clip-path="url(#eq-clip-below)"/>';
 
   // Visible dots (colored by own value) + invisible hit areas for hover
   data.forEach(function(d, i) {
